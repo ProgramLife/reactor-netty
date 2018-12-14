@@ -153,7 +153,7 @@ final class HttpServerWSOperations extends HttpServerOperations
 				}
 				frame.release();
 				return channel().newSucceededFuture();
-			});
+			}, frame::release);
 		}
 		frame.release();
 		return Mono.empty();

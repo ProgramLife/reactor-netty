@@ -249,7 +249,7 @@ final class HttpClientWSOperations extends HttpClientOperations
 				}
 				frame.release();
 				return channel().newSucceededFuture();
-			});
+			}, frame::release);
 		}
 		frame.release();
 		return Mono.empty();

@@ -36,6 +36,7 @@ import io.netty.channel.nio.NioEventLoop;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.stream.ChunkedInput;
 import io.netty.handler.stream.ChunkedNioFile;
+import io.netty.util.ReferenceCountUtil;
 import org.reactivestreams.Publisher;
 import org.reactivestreams.Subscriber;
 import reactor.core.Exceptions;
@@ -347,7 +348,8 @@ public interface NettyOutbound extends Publisher<Void> {
 	 */
 	default NettyOutbound sendObject(Object msg) {
 		return then(FutureMono.deferFuture(() -> context().channel()
-		                                                  .writeAndFlush(msg)));
+		                                                  .writeAndFlush(msg),
+		                                   () -> ReferenceCountUtil.release(msg)));
 	}
 
 	/**

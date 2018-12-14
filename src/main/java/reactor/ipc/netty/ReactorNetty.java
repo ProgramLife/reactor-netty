@@ -288,7 +288,18 @@ public final class ReactorNetty {
 				this.thenMono = Mono.from(thenPublisher);
 			}
 			else {
-				this.thenMono = parentMono.thenEmpty(thenPublisher);
+				this.thenMono =
+						parentMono.thenEmpty(thenPublisher)
+						          .doOnCancel(() -> {
+						              if (log.isDebugEnabled()) {
+						                  log.debug(format(source.context().channel(),
+						                                   "Response has already been completed. Dropping outgoing data: {}"),
+						                            thenPublisher);
+						              }
+						              if (thenPublisher instanceof FutureMono) {
+						                  ((FutureMono) thenPublisher).cleanOnCancel();
+						              }
+						          });
 			}
 		}
 

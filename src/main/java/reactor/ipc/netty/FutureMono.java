@@ -36,7 +36,6 @@ import reactor.core.publisher.FluxOperator;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.MonoOperator;
 import reactor.core.publisher.Operators;
-import reactor.ipc.netty.channel.AbortedException;
 import reactor.util.context.Context;
 
 /**
@@ -76,7 +75,23 @@ public abstract class FutureMono extends Mono<Void> {
 	 * @return A {@link Mono} forwarding {@link Future} success or failure
 	 */
 	public static <F extends Future<Void>> Mono<Void> deferFuture(Supplier<F> deferredFuture) {
-		return new DeferredFutureMono<>(deferredFuture);
+		return deferFuture(deferredFuture, NOOP_CLEAN_ON_CANCEL);
+	}
+
+	/**
+	 * Convert a supplied {@link Future} for each subscriber into {@link Mono}.
+	 * {@link Mono#subscribe(Subscriber)}
+	 * will bridge to {@link Future#addListener(GenericFutureListener)}.
+	 *
+	 * @param <F> the future type
+	 *
+	 * @param deferredFuture the future to evaluate and convert from
+	 * @param cleanOnCancel task to execute when the operation is canceled
+	 * @return A {@link Mono} forwarding {@link Future} success or failure
+	 */
+	public static <F extends Future<Void>> Mono<Void> deferFuture(Supplier<F> deferredFuture,
+			Runnable cleanOnCancel) {
+		return new DeferredFutureMono<>(deferredFuture, cleanOnCancel);
 	}
 
 	/**
@@ -127,6 +142,10 @@ public abstract class FutureMono extends Mono<Void> {
 	 */
 	public static <F extends Future<Void>> Mono<Void> deferFutureWithContext(Function<Context, F> deferredFuture) {
 		return new DeferredContextFutureMono<>(deferredFuture);
+	}
+
+	protected void cleanOnCancel() {
+		NOOP_CLEAN_ON_CANCEL.run();
 	}
 
 	static <T> Publisher<T> wrapContextAndDispose(Publisher<T> publisher, ChannelFutureSubscription cfs) {
@@ -190,9 +209,12 @@ public abstract class FutureMono extends Mono<Void> {
 
 		final Supplier<F> deferredFuture;
 
-		DeferredFutureMono(Supplier<F> deferredFuture) {
+		final Runnable    cleanOnCancel;
+
+		DeferredFutureMono(Supplier<F> deferredFuture, Runnable cleanOnCancel) {
 			this.deferredFuture =
 					Objects.requireNonNull(deferredFuture, "deferredFuture");
+			this.cleanOnCancel = Objects.requireNonNull(cleanOnCancel, "cleanOnCancel");
 		}
 
 		@Override
@@ -221,6 +243,18 @@ public abstract class FutureMono extends Mono<Void> {
 			s.onSubscribe(fs);
 			// Returned value is deliberately ignored
 			f.addListener(fs);
+		}
+
+		@Override
+		public String toString() {
+			return "DeferredFutureMono{" +
+					"deferredFuture=" + deferredFuture +
+					'}';
+		}
+
+		@Override
+		protected void cleanOnCancel() {
+			this.cleanOnCancel.run();
 		}
 	}
 
@@ -317,17 +351,18 @@ public abstract class FutureMono extends Mono<Void> {
 
 		@Override
 		public void subscribe(CoreSubscriber<? super Void> s) {
-			if (!channel.isActive()) {
-				Operators.error(s, new AbortedException("Cannot publish the content " +
-						dataStream + ", the connection has been closed"));
-				return;
-			}
-
 			ChannelFutureSubscription cfs = new ChannelFutureSubscription(channel, s);
 
 			s.onSubscribe(cfs);
 
 			channel.writeAndFlush(wrapContextAndDispose(dataStream, cfs), cfs);
+		}
+
+		@Override
+		public String toString() {
+			return "DeferredWriteMono{" +
+					"dataStream=" + dataStream +
+					'}';
 		}
 	}
 
@@ -403,4 +438,6 @@ public abstract class FutureMono extends Mono<Void> {
 			return this;
 		}
 	}
+
+	static final Runnable NOOP_CLEAN_ON_CANCEL = () -> {};
 }
